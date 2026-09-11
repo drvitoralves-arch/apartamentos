@@ -80,12 +80,13 @@ document.addEventListener('keydown', e => {
 
 document.addEventListener('click', async e => {
   const estrela = e.target.closest('.estrela');
-  const cartaoDaEstrela = estrela && estrela.closest('.cartao');
+  const cartaoDaEstrela = estrela && estrela.closest('[data-slug]');
   if (estrela && cartaoDaEstrela) {
     const nota = Number(estrela.dataset.valor);
     try {
       await gravarCampo(cartaoDaEstrela.dataset.slug, 'nota', nota);
       redesenharEstrelas(cartaoDaEstrela, nota);
+      aplicarFiltros();
     } catch (err) {
       alert(err.message);
     }
@@ -125,7 +126,17 @@ function aplicarFiltros() {
       if (ordenacao.value === 'nota') return -Number(c.dataset.nota);
       return 0;
     };
-    cartoes.sort((a, b) => chave(a) - chave(b)).forEach(c => grade.appendChild(c));
+    // "Padrao" nao e "como veio": e a mesma ordem do gerador - estrelas, bairro, rua.
+    // Precisa existir aqui tambem, senao dar uma nota nao remexe a grade ate regerar.
+    if (ordenacao.value === 'nenhuma') {
+      cartoes.sort((a, b) =>
+        (Number(b.dataset.nota) - Number(a.dataset.nota)) ||
+        a.dataset.bairro.localeCompare(b.dataset.bairro, 'pt-BR') ||
+        a.dataset.rua.localeCompare(b.dataset.rua, 'pt-BR'));
+    } else {
+      cartoes.sort((a, b) => chave(a) - chave(b));
+    }
+    cartoes.forEach(c => grade.appendChild(c));
   });
 }
 
