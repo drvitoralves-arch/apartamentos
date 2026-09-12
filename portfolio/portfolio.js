@@ -1,4 +1,4 @@
-
+const GRAVA_NO_SERVIDOR = false;
 let atual = { lista: [], i: 0 };
 
 function abrirTelaCheia(lista, i) {
@@ -39,6 +39,21 @@ function atualizarContadorArquivados() {
   bloco.querySelector('summary').textContent = `Arquivados (${n})`;
 }
 
+const CHAVE_NOTAS = 'apartamentos:notas';
+
+function notasSalvas() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_NOTAS)) || {}; } catch (e) { return {}; }
+}
+
+// No site publicado nao ha /api/ficha: a nota fica no navegador e volta para as
+// fichas pelo botao "Copiar minhas notas". No servidor local grava direto no ficha.md.
+async function gravarNota(slug, nota) {
+  if (GRAVA_NO_SERVIDOR) return gravarCampo(slug, 'nota', nota || '');
+  const notas = notasSalvas();
+  if (nota) notas[slug] = nota; else delete notas[slug];
+  localStorage.setItem(CHAVE_NOTAS, JSON.stringify(notas));
+}
+
 async function gravarCampo(slug, campo, valor) {
   const r = await fetch('/api/ficha', {
     method: 'POST',
@@ -55,7 +70,9 @@ function redesenharEstrelas(cartao, nota) {
     span.dataset.nota = nota;
     span.classList.toggle('vazia', !nota);
     span.querySelectorAll('.estrela').forEach(i => {
-      i.textContent = Number(i.dataset.valor) <= nota ? '★' : '☆';
+      const v = Number(i.dataset.valor);
+      i.querySelector('b').style.width =
+        (nota >= v ? 100 : nota >= v - 0.5 ? 50 : 0) + '%';
     });
   });
   cartao.dataset.nota = nota;
@@ -82,9 +99,15 @@ document.addEventListener('click', async e => {
   const estrela = e.target.closest('.estrela');
   const cartaoDaEstrela = estrela && estrela.closest('[data-slug]');
   if (estrela && cartaoDaEstrela) {
-    const nota = Number(estrela.dataset.valor);
+    const cheia = Number(estrela.dataset.valor);
+    // Metade esquerda da estrela = meia nota, como nos sites de avaliacao. Pelo
+    // teclado nao ha ponto de clique (clientX = 0): vale a estrela inteira.
+    const r = estrela.getBoundingClientRect();
+    const meia = (e.clientX || e.clientY) && (e.clientX - r.left) < r.width / 2;
+    let nota = meia ? cheia - 0.5 : cheia;
+    if (nota === Number(cartaoDaEstrela.dataset.nota)) nota = 0;  // clicar de novo tira
     try {
-      await gravarCampo(cartaoDaEstrela.dataset.slug, 'nota', nota);
+      await gravarNota(cartaoDaEstrela.dataset.slug, nota);
       redesenharEstrelas(cartaoDaEstrela, nota);
       aplicarFiltros();
     } catch (err) {
@@ -143,7 +166,28 @@ function aplicarFiltros() {
 document.querySelectorAll('#filtro-status, #filtro-nota, #filtro-ordenacao').forEach(el => {
   el.addEventListener('change', aplicarFiltros);
 });
+
+// Site publicado: as notas dadas neste navegador voltam para a tela a cada visita.
+if (!GRAVA_NO_SERVIDOR) {
+  const notas = notasSalvas();
+  document.querySelectorAll('[data-slug]').forEach(el => {
+    if (notas[el.dataset.slug]) redesenharEstrelas(el, notas[el.dataset.slug]);
+  });
+}
 aplicarFiltros();
+
+const botaoNotas = document.querySelector('.copiar-notas');
+if (botaoNotas) botaoNotas.addEventListener('click', async () => {
+  const notas = notasSalvas();
+  const texto = Object.entries(notas).map(([s, n]) => `${s}: ${n}`).join('\n');
+  if (!texto) { alert('Nenhuma nota dada neste navegador ainda.'); return; }
+  try {
+    await navigator.clipboard.writeText(texto);
+    alert('Notas copiadas. Cole no Claude para gravar nas fichas.');
+  } catch (err) {
+    prompt('Copie as notas:', texto);
+  }
+});
 
 const MAX_COMPARAR = 5;
 const compararCaixas = document.querySelectorAll('.comparar-topo input[type=checkbox]');
